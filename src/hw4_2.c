@@ -11,189 +11,291 @@ Instructions to run the program: mpiexec -n <number of processes> hw4_2 <grid si
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <mpi.h>
+#include <sys/time.h>
 
-#define DEAD 0
-#define ALIVE 1
+#define DIES   0
+#define ALIVE  1
 
-// Count alive neighbors around a cell
-int count_neighbors(int **grid, int x, int y) {
-    int alive_count = 0;
-    for (int i = x - 1; i <= x + 1; i++) {
-        for (int j = y - 1; j <= y + 1; j++) {
-            if (i != x || j != y) {
-                alive_count += grid[i][j];
-            }
-        }
+void Check_for_error(int local_ok, char fname[], char message[], MPI_Comm comm);
+void Allocate_vectors_for_life(int** local_x_pp, int local_n, int n, MPI_Comm comm);
+void Read_vector(int local_a[], int *counts, int *displs, int n, char vec_name[], int my_rank, MPI_Comm comm);
+void compute_local(int local_x[], int n, int counts[], int my_rank, int comm_sz, MPI_Comm comm);
+double gettime(void);
+void printarray_1d(int *a, int N, int k, const char *output_file_path);
+int **allocarray(int P, int Q);
+void freearray(int **a);
+void print_life(int **life, int nRowsGhost, int nColsGhost, int my_rank, int local_n);
+int compute(int **life, int **temp, int nRows, int nCols);
+int max_gens;
+const char *output_file;
+
+int main(int argc, char **argv) {
+    int n, local_n, i, remain;
+    int comm_sz, my_rank, *counts;
+    int *local_x;
+    MPI_Comm comm;
+    int *displs;
+
+    MPI_Init(NULL, NULL);
+    comm = MPI_COMM_WORLD;
+    MPI_Comm_size(comm, &comm_sz);
+    MPI_Comm_rank(comm, &my_rank);
+
+    n = atoi(argv[1]);
+    max_gens = atoi(argv[2]);
+    output_file = argv[4];
+
+    /* compute counts and displacements */
+    counts = (int *)malloc(comm_sz * sizeof(int));
+    displs = (int *)malloc(comm_sz * sizeof(int));
+    remain = n % comm_sz;
+    for (i = 0; i < comm_sz; i++) {
+        counts[i] = n / comm_sz + ((i < remain) ? 1 : 0);
+        counts[i] = counts[i] * n;
     }
-    return alive_count;
-}
-
-// Update grid to the next generation
-bool update_generation(int **current, int **next, int rows, int cols) {
-    bool changed = false;
-    for (int i = 1; i < rows - 1; i++) {
-        for (int j = 1; j < cols - 1; j++) {
-            int alive_neighbors = count_neighbors(current, i, j);
-            next[i][j] = (current[i][j] == ALIVE) ? 
-                         ((alive_neighbors == 2 || alive_neighbors == 3) ? ALIVE : DEAD) : 
-                         (alive_neighbors == 3 ? ALIVE : DEAD);
-            if (current[i][j] != next[i][j]) changed = true;
-        }
+    displs[0] = 0;
+    for (i = 1; i < comm_sz; i++) {
+        displs[i] = displs[i - 1] + counts[i - 1];
     }
-    return changed;
-}
+    local_n = counts[my_rank];
 
-// Swap pointers to the grids
-void swap(int ***a, int ***b) {
-    int **temp = *a;
-    *a = *b;
-    *b = temp;
-}
+    Allocate_vectors_for_life(&local_x, local_n, n, comm);
+    Read_vector(local_x, counts, displs, n, "x", my_rank, comm);
+    compute_local(local_x, n, counts, my_rank, comm_sz, comm);
 
-int main(int argc, char *argv[]) {
-    MPI_Init(&argc, &argv);
-    int rank, world_size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-
-    double start;
-    double end;
-
-    if (argc != 5) {
-        if (rank == 0) printf("Usage: ./hw4 <grid size> <max generations> <processes> <output file>\n");
-        MPI_Finalize();
-        return 1;
+    // Gather the final board state
+    int *final_board = NULL;
+    if (my_rank == 0) {
+        final_board = (int *)malloc(n * n * sizeof(int));
     }
+    MPI_Gatherv(local_x, local_n, MPI_INT, final_board, counts, displs, MPI_INT, 0, comm);
 
-    int grid_size = atoi(argv[1]), generations = atoi(argv[2]);
-    char *output_path = argv[4];
-
-    int local_rows = grid_size / world_size + (rank < grid_size % world_size);
-    int total_rows = local_rows + 2, total_cols = grid_size + 2;
-
-    int **current = (int **)malloc(total_rows * sizeof(int *));
-    int **next = (int **)malloc(total_rows * sizeof(int *));
-    for (int i = 0; i < total_rows; i++) {
-        current[i] = (int *)calloc(total_cols, sizeof(int));
-        next[i] = (int *)calloc(total_cols, sizeof(int));
+    if (my_rank == 0) {
+        printarray_1d(final_board, n, max_gens, output_file);
+        free(final_board);
     }
 
-    int *recv_data = (rank == 0) ? malloc(grid_size * grid_size * sizeof(int)) : NULL;
-    if (rank == 0) {
-        for (int i = 0; i < grid_size * grid_size; i++) {
-            recv_data[i] = rand() % 2;
-        }
-    }
-
-    int *recv_counts = malloc(world_size * sizeof(int));
-    int *recv_displs = malloc(world_size * sizeof(int));
-    int rows_offset = 0;
-    for (int i = 0; i < world_size; i++) {
-        recv_counts[i] = (grid_size / world_size + (i < grid_size % world_size)) * grid_size;
-        recv_displs[i] = rows_offset;
-        rows_offset += recv_counts[i];
-    }
-
-    int *local_data = malloc(local_rows * grid_size * sizeof(int));
-    MPI_Scatterv(recv_data, recv_counts, recv_displs, MPI_INT, local_data, local_rows * grid_size, MPI_INT, 0, MPI_COMM_WORLD);
-
-    for (int i = 0, idx = 0; i < local_rows; i++) {
-        for (int j = 0; j < grid_size; j++) {
-            current[i + 1][j + 1] = local_data[idx++];
-        }
-    }
-
-    free(local_data);
-    if (rank == 0) free(recv_data);
-
-    int up = (rank > 0) ? rank - 1 : MPI_PROC_NULL;
-    int down = (rank < world_size - 1) ? rank + 1 : MPI_PROC_NULL;
-
-    bool changes = true;
-    int gen = 0;
-    if (rank == 0) {
-        start = MPI_Wtime();
-    }
-    while (gen < generations && changes) {
-        MPI_Request requests[4];
-        
-        // Non-blocking sends and receives
-        MPI_Irecv(current[0], total_cols, MPI_INT, up, 1, MPI_COMM_WORLD, &requests[0]);
-        MPI_Irecv(current[total_rows - 1], total_cols, MPI_INT, down, 0, MPI_COMM_WORLD, &requests[1]);
-        MPI_Isend(current[1], total_cols, MPI_INT, up, 0, MPI_COMM_WORLD, &requests[2]);
-        MPI_Isend(current[total_rows - 2], total_cols, MPI_INT, down, 1, MPI_COMM_WORLD, &requests[3]);
-
-        // Wait for all non-blocking operations to complete
-        MPI_Waitall(4, requests, MPI_STATUSES_IGNORE);
-
-        changes = update_generation(current, next, total_rows, total_cols);
-
-        int local_changed = changes ? 1 : 0, global_changed;
-        MPI_Allreduce(&local_changed, &global_changed, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-        changes = global_changed > 0;
-
-        swap(&current, &next);
-        gen++;
-    }
-    if (rank == 0) {
-        end = MPI_Wtime();
-    }
-
-    int *final_data = malloc(local_rows * grid_size * sizeof(int));
-    for (int i = 0, idx = 0; i < local_rows; i++) {
-        for (int j = 0; j < grid_size; j++) {
-            final_data[idx++] = current[i + 1][j + 1];
-        }
-    }
-
-    int *gather_counts = NULL, *gather_displs = NULL, *gathered_data = NULL;
-    if (rank == 0) {
-        gather_counts = malloc(world_size * sizeof(int));
-        gather_displs = malloc(world_size * sizeof(int));
-        rows_offset = 0;
-        for (int i = 0; i < world_size; i++) {
-            gather_counts[i] = recv_counts[i];
-            gather_displs[i] = rows_offset;
-            rows_offset += gather_counts[i];
-        }
-        gathered_data = malloc(grid_size * grid_size * sizeof(int));
-    }
-
-    MPI_Gatherv(final_data, local_rows * grid_size, MPI_INT, gathered_data, gather_counts, gather_displs, MPI_INT, 0, MPI_COMM_WORLD);
-
-    if (rank == 0) {
-        FILE *out = fopen(output_path, "w");
-        if (!out) {
-            perror("Output file error");
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-        for (int i = 0; i < grid_size * grid_size; i++) {
-            fprintf(out, "%c ", gathered_data[i] == ALIVE ? '1' : '0');
-            if ((i + 1) % grid_size == 0) fprintf(out, "\n");
-        }
-        fclose(out);
-        free(gather_counts);
-        free(gather_displs);
-        free(gathered_data);
-    }
-
-    free(recv_counts);
-    free(recv_displs);
-    free(final_data);
-    for (int i = 0; i < total_rows; i++) {
-        free(current[i]);
-        free(next[i]);
-    }
-    free(current);
-    free(next);
-
-    if (rank == 0) {
-        printf("Completed after %d generations\n", gen);
-        printf("Elapsed time: %f seconds\n", end - start);
-    }
+    free(local_x);
+    free(counts);
+    free(displs);
 
     MPI_Finalize();
     return 0;
+}
+
+void Check_for_error(int local_ok, char fname[], char message[], MPI_Comm comm) {
+    int ok;
+    MPI_Allreduce(&local_ok, &ok, 1, MPI_INT, MPI_MIN, comm);
+    if (ok == 0) {
+        int my_rank;
+        MPI_Comm_rank(comm, &my_rank);
+        if (my_rank == 0) {
+            fprintf(stderr, "Proc %d > In %s, %s\n", my_rank, fname, message);
+            fflush(stderr);
+        }
+        MPI_Finalize();
+        exit(-1);
+    }
+}
+
+void Allocate_vectors_for_life(int** local_x_pp, int local_n, int n, MPI_Comm comm) {
+    int local_ok = 1;
+    char* fname = "Allocate_vectors";
+    *local_x_pp = malloc(local_n * sizeof(int));
+    if (*local_x_pp == NULL) local_ok = 0;
+    Check_for_error(local_ok, fname, "Can't allocate local vector(s)", comm);
+}
+
+void Read_vector(int local_a[], int *counts, int *displs, int n, char vec_name[], int my_rank, MPI_Comm comm) {
+    int* a = NULL;
+    int i, local_n;
+    int local_ok = 1;
+    char* fname = "Read_vector";
+
+    local_n = counts[my_rank];
+    if (my_rank == 0) {
+        a = malloc(n * n * sizeof(int));
+        if (a == NULL) local_ok = 0;
+        Check_for_error(local_ok, fname, "Can't allocate temporary vector", comm);
+        for (i = 0; i < n * n; i++) {
+            a[i] = rand() % 2;
+        }
+        MPI_Scatterv(a, counts, displs, MPI_INT, local_a, local_n, MPI_INT, 0, comm);
+        free(a);
+    } else {
+        Check_for_error(local_ok, fname, "Can't allocate temporary vector", comm);
+        MPI_Scatterv(a, counts, displs, MPI_INT, local_a, local_n, MPI_INT, 0, comm);
+    }
+}
+
+void compute_local(int local_x[], int n, int counts[], int my_rank, int comm_sz, MPI_Comm comm) {
+    int i, j, local_n;
+    int **life = NULL, **temp = NULL, **ptr;
+    local_n = counts[my_rank];
+    int nCols = n;
+    int nRows = local_n / n;
+    int upper_rank, down_rank;
+    double t1, t2;
+    int flag = 1, k;
+
+    MPI_Request send_request[2], recv_request[2];
+    MPI_Status status;
+
+    int nRowsGhost = nRows + 2;
+    int nColsGhost = nCols + 2;
+    life = allocarray(nRowsGhost, nColsGhost);
+    temp = allocarray(nRowsGhost, nColsGhost);
+
+    int row = 0;
+    int col = 0;
+
+    /* Initialize the boundaries of the life matrix */
+    for (i = 0; i < nRowsGhost; i++) {
+        for (j = 0; j < nColsGhost; j++) {
+            if (i == 0 || j == 0 || i == nRowsGhost - 1 || j == nColsGhost - 1) {
+                life[i][j] = DIES;
+                temp[i][j] = DIES;
+            }
+        }
+    }
+
+    for (i = 0; i < local_n; i++) {
+        row = i / n;
+        col = i % n;
+        row = row + 1;
+        col = col + 1;
+        life[row][col] = local_x[i];
+    }
+
+    upper_rank = my_rank + 1;
+    if (upper_rank >= comm_sz) upper_rank = MPI_PROC_NULL;
+    down_rank = my_rank - 1;
+    if (down_rank < 0) down_rank = MPI_PROC_NULL;
+    int NTIMES = max_gens;
+    if (my_rank == 0) {
+        t1 = gettime();
+    }
+
+    /* Play the game of life for given number of iterations */
+    for (k = 0; k < NTIMES; k++) {
+        flag = 0;
+
+        // Non-blocking send and receive for even ranks
+        if ((my_rank % 2) == 0) {
+            MPI_Isend(&(life[nRows][0]), nColsGhost, MPI_INT, upper_rank, 0, comm, &send_request[0]);
+            MPI_Irecv(&(life[nRows + 1][0]), nColsGhost, MPI_INT, upper_rank, 0, comm, &recv_request[0]);
+        } else {
+            MPI_Isend(&(life[1][0]), nColsGhost, MPI_INT, down_rank, 0, comm, &send_request[0]);
+            MPI_Irecv(&(life[0][0]), nColsGhost, MPI_INT, down_rank, 0, comm, &recv_request[0]);
+        }
+
+        // Non-blocking send and receive for odd ranks
+        if ((my_rank % 2) == 1) {
+            MPI_Isend(&(life[nRows][0]), nColsGhost, MPI_INT, upper_rank, 1, comm, &send_request[1]);
+            MPI_Irecv(&(life[nRows + 1][0]), nColsGhost, MPI_INT, upper_rank, 1, comm, &recv_request[1]);
+        } else {
+            MPI_Isend(&(life[1][0]), nColsGhost, MPI_INT, down_rank, 1, comm, &send_request[1]);
+            MPI_Irecv(&(life[0][0]), nColsGhost, MPI_INT, down_rank, 1, comm, &recv_request[1]);
+        }
+
+        // Wait for all non-blocking operations to complete
+        MPI_Wait(&send_request[0], &status);
+        MPI_Wait(&recv_request[0], &status);
+        MPI_Wait(&send_request[1], &status);
+        MPI_Wait(&recv_request[1], &status);
+
+        flag = compute(life, temp, nRows, nCols);
+
+        int reduction_flag = 0;
+        MPI_Allreduce(&flag, &reduction_flag, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+
+        if (my_rank == 0) {
+            if (!reduction_flag)
+                printf("The sum of all flag is %d after k=%d.\n", reduction_flag, k);
+        }
+        if (!reduction_flag) {
+            break;
+        }
+
+        MPI_Barrier(comm);
+
+        ptr = life;
+        life = temp;
+        temp = ptr;
+    }
+    if (my_rank == 0) {
+        t2 = gettime();
+        printf("Completed after %d generations\n", k);
+        printf("Elapsed time: %f seconds\n", t2 - t1);
+    }
+
+    // Copy the final state back to local_x
+    for (i = 1; i <= nRows; i++) {
+        for (j = 1; j <= nCols; j++) {
+            local_x[(i - 1) * n + (j - 1)] = life[i][j];
+        }
+    }
+
+    freearray(life);
+    freearray(temp);
+}
+
+double gettime(void) {
+    struct timeval tval;
+    gettimeofday(&tval, NULL);
+    return ((double)tval.tv_sec + (double)tval.tv_usec / 1000000.0);
+}
+
+void printarray_1d(int *a, int N, int k, const char *output_file_path) {
+    FILE *file = fopen(output_file_path, "w");
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            fprintf(file, "%d ", a[i * N + j]);
+        }
+        fprintf(file, "\n");
+    }
+    fclose(file);
+}
+
+int **allocarray(int P, int Q) {
+    int i, *p, **a;
+    p = (int *)malloc(P * Q * sizeof(int));
+    a = (int **)malloc(P * sizeof(int *));
+    for (i = 0; i < P; i++) {
+        a[i] = &p[i * Q];
+    }
+    return a;
+}
+
+void freearray(int **a) {
+    free(&a[0][0]);
+    free(a);
+}
+
+int compute(int **life, int **temp, int nRows, int nCols) {
+    int i, j, value, flag = 0;
+    for (i = 1; i < nRows + 1; i++) {
+        for (j = 1; j < nCols + 1; j++) {
+            value = life[i - 1][j - 1] + life[i - 1][j] + life[i - 1][j + 1] +
+                    life[i][j - 1] + life[i][j + 1] +
+                    life[i + 1][j - 1] + life[i + 1][j] + life[i + 1][j + 1];
+            if (life[i][j]) {
+                if (value < 2 || value > 3) {
+                    temp[i][j] = DIES;
+                    flag++;
+                } else {
+                    temp[i][j] = ALIVE;
+                }
+            } else {
+                if (value == 3) {
+                    temp[i][j] = ALIVE;
+                    flag++;
+                } else {
+                    temp[i][j] = DIES;
+                }
+            }
+        }
+    }
+    return flag;
 }

@@ -91,7 +91,7 @@ void Check_for_error(int local_ok, char fname[], char message[], MPI_Comm comm) 
         int my_rank;
         MPI_Comm_rank(comm, &my_rank);
         if (my_rank == 0) {
-            fprintf(stderr, "Proc %d > In %s, %s\n", my_rank, fname, message);
+            // fprintf(stderr, "Proc %d > In %s, %s\n", my_rank, fname, message);
             fflush(stderr);
         }
         MPI_Finalize();
@@ -212,7 +212,7 @@ void compute_local(int local_x[], int n, int counts[], int my_rank, int comm_sz,
 
         if (my_rank == 0) {
             if (!reduction_flag)
-                printf("The sum of all flag is %d after k=%d.\n", reduction_flag, k);
+                // printf("The sum of all flag is %d after k=%d.\n", reduction_flag, k);
         }
         if (!reduction_flag) {
             break;

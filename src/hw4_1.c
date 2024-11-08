@@ -1,3 +1,14 @@
+/* 
+Fall 2024: CS 581 High Performance Computing 
+Homework-4
+Name: Nolan McKivergan
+Email: npmckivergan@crimson.ua.edu
+Course Section: CS 581-001
+Homework #: 4
+Instructions to compile the program: mpicc -O3 -o hw4_1 hw4_1.c
+Instructions to run the program: mpiexec -n <number of processes> hw4_1 <grid size> <max generations> <number of processes> <output file path>
+*/ 
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>

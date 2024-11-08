@@ -1,0 +1,93 @@
+setting asax scratch directory
+ 
+============================================================
+=====         Summary of your script job               =====
+============================================================
+  The script file is: performance.sh
+  The time limit is 12:00:00 HH:MM:SS.
+  The target directory is: /home/ualclsd0176/Fall2024_CS481_HW2
+  The working directory is:  /scratch-local/ualclsd0176.performance.206338.asax-pbs1
+  The memory limit is: 64gb
+  The job will start running after: 202411061146.05
+  Job Name: performance
+  Queue: -q class -W group_list=classq
+  Constraints: 
+  Using  20  cores on master node  asax020.asc.edu
+  Node list:  asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu
+  Cores:  20
+  Command typed:
+/scripts/run_script performance.sh     
+  Queue submit command:
+qsub -q class -W group_list=classq -j oe -N performance -a 202411061146.05 -r n -M npmckivergan@crimson.ua.edu -l walltime=12:00:00 -l select=ncpus=20:mpiprocs=20:mem=64000mb 
+Completed after 5000 generations
+Elapsed time: 236.847219 seconds
+Completed after 5000 generations
+Elapsed time: 236.831756 seconds
+Completed after 5000 generations
+Elapsed time: 236.884734 seconds
+Completed after 5000 generations
+Elapsed time: 119.018589 seconds
+Completed after 5000 generations
+Elapsed time: 118.982940 seconds
+Completed after 5000 generations
+Elapsed time: 118.994320 seconds
+Completed after 5000 generations
+Elapsed time: 59.475103 seconds
+Completed after 5000 generations
+Elapsed time: 59.486261 seconds
+Completed after 5000 generations
+Elapsed time: 59.452255 seconds
+Completed after 5000 generations
+Elapsed time: 30.003526 seconds
+Completed after 5000 generations
+Elapsed time: 29.988928 seconds
+Completed after 5000 generations
+Elapsed time: 30.007934 seconds
+Completed after 5000 generations
+Elapsed time: 15.975820 seconds
+Completed after 5000 generations
+Elapsed time: 15.962814 seconds
+Completed after 5000 generations
+Elapsed time: 15.970759 seconds
+Completed after 5000 generations
+Elapsed time: 14.077144 seconds
+Completed after 5000 generations
+Elapsed time: 14.088469 seconds
+Completed after 5000 generations
+Elapsed time: 14.131693 seconds
+Completed after 5000 generations
+Elapsed time: 245.299295 seconds
+Completed after 5000 generations
+Elapsed time: 245.692192 seconds
+Completed after 5000 generations
+Elapsed time: 245.266802 seconds
+Completed after 5000 generations
+Elapsed time: 122.840644 seconds
+Completed after 5000 generations
+Elapsed time: 122.910566 seconds
+Completed after 5000 generations
+Elapsed time: 122.937560 seconds
+Completed after 5000 generations
+Elapsed time: 61.465791 seconds
+Completed after 5000 generations
+Elapsed time: 61.457944 seconds
+Completed after 5000 generations
+Elapsed time: 61.480121 seconds
+Completed after 5000 generations
+Elapsed time: 30.937285 seconds
+Completed after 5000 generations
+Elapsed time: 30.989565 seconds
+Completed after 5000 generations
+Elapsed time: 30.953838 seconds
+Completed after 5000 generations
+Elapsed time: 16.315978 seconds
+Completed after 5000 generations
+Elapsed time: 16.320546 seconds
+Completed after 5000 generations
+Elapsed time: 16.324193 seconds
+Completed after 5000 generations
+Elapsed time: 13.330298 seconds
+Completed after 5000 generations
+Elapsed time: 13.367739 seconds
+Completed after 5000 generations
+Elapsed time: 13.346191 seconds

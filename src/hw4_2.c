@@ -211,8 +211,9 @@ void compute_local(int local_x[], int n, int counts[], int my_rank, int comm_sz,
         MPI_Allreduce(&flag, &reduction_flag, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 
         if (my_rank == 0) {
-            if (!reduction_flag)
+            if (!reduction_flag) {
                 // printf("The sum of all flag is %d after k=%d.\n", reduction_flag, k);
+            }
         }
         if (!reduction_flag) {
             break;
